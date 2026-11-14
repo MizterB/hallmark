@@ -63,12 +63,23 @@ check_vendored_create_dmg() {
 
 # ------------------------------------------------------------------------------ signing
 
+# Apple's timestamp server fails now and then; --force makes a repeat harmless.
+codesign_retry() {
+  local attempt=1
+  until codesign "$@"; do
+    [ "${attempt}" -lt 3 ] || die "codesign failed three times on $*."
+    echo "codesign failed (attempt ${attempt} of 3), trying again in 20 seconds."
+    attempt=$((attempt + 1))
+    sleep 20
+  done
+}
+
 sign_one() { # path [entitlements]
   if [ -n "${2:-}" ]; then
-    codesign --force --timestamp --options runtime --sign "${IDENTITY}" --keychain "${KEYCHAIN}" \
+    codesign_retry --force --timestamp --options runtime --sign "${IDENTITY}" --keychain "${KEYCHAIN}" \
       --entitlements "$2" "$1"
   else
-    codesign --force --timestamp --options runtime --sign "${IDENTITY}" --keychain "${KEYCHAIN}" "$1"
+    codesign_retry --force --timestamp --options runtime --sign "${IDENTITY}" --keychain "${KEYCHAIN}" "$1"
   fi
 }
 
@@ -152,7 +163,7 @@ bash "${ROOT}/vendor/create-dmg/create-dmg" "${DMG_ARGS[@]}" "${DMG}" "${STAGE}"
 [ -f "${DMG}" ] || die "create-dmg did not produce a DMG."
 
 echo "== sign, notarize and staple the DMG"
-codesign --force --timestamp --sign "${IDENTITY}" --keychain "${KEYCHAIN}" "${DMG}"
+codesign_retry --force --timestamp --sign "${IDENTITY}" --keychain "${KEYCHAIN}" "${DMG}"
 notarize "${DMG}" "dmg"
 DMG_SUBMISSION="${SUBMISSION_ID}"
 xcrun stapler staple "${DMG}"
